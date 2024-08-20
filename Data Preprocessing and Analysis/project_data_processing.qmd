@@ -1,0 +1,468 @@
+# Leeland Zhang
+# Data Cleaning + Feature Engineering + Data Analysis
+```{r}
+library(readr)
+
+features <- read_csv("C:/Users/leela/Downloads/twitch_gamers/large_twitch_features.csv")
+edges <- read_csv("C:/Users/leela/Downloads/twitch_gamers/large_twitch_edges.csv")
+
+```
+
+
+```{r}
+# Basic statistics
+summary(features)
+# Distribution of languages
+language_dist <- table(features$language)
+language_dist_sorted <- sort(language_dist, decreasing = TRUE)
+
+top_10_languages <- head(language_dist_sorted, 10)
+language_df <- data.frame(
+  language = names(top_10_languages),
+  count = as.numeric(top_10_languages)
+)
+library(ggplot2)
+ggplot(language_df, aes(x = reorder(language, -count), y = count)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Top 10 Languages on Twitch", x = "Language", y = "Number of Streamers")
+```
+
+```{r}
+library(lubridate)
+library(dplyr)
+library(tidyr)
+
+features$day <- wday(features$created_at, label = TRUE)
+features$hour <- hour(features$created_at)
+
+activity_heatmap <- features %>%
+  count(day, hour) %>%
+  complete(day, hour = 0:23, fill = list(n = 0))
+
+ggplot(activity_heatmap, aes(x = hour, y = day, fill = n)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "red") +
+  labs(title = "Streaming Activity Heatmap", 
+       x = "Hour of Day", 
+       y = "Day of Week", 
+       fill = "Number of Streams") +
+  theme_minimal()
+```
+
+
+
+#Finding an Appropriate Amount of Data
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(igraph)
+library(ggplot2)
+library(gridExtra)
+
+sample_and_process <- function(features, edges, sample_percentage) {
+  set.seed(42)  
+  
+  sampled_streamers <- features %>%
+    sample_n(size = nrow(features) * sample_percentage) %>%
+    pull(numeric_id)
+  
+  sampled_features <- features %>% filter(numeric_id %in% sampled_streamers)
+  sampled_edges <- edges %>%
+    filter(numeric_id_1 %in% sampled_streamers, numeric_id_2 %in% sampled_streamers)
+  
+  g <- graph_from_data_frame(sampled_edges, directed = FALSE, vertices = sampled_features$numeric_id)
+  
+  V(g)$degree <- degree(g)
+  V(g)$betweenness <- betweenness(g, normalized = TRUE)
+  V(g)$closeness <- closeness(g, normalized = TRUE)
+  V(g)$eigenvector <- eigen_centrality(g)$vector
+  
+  sampled_features <- sampled_features %>%
+    mutate(
+      degree = degree(g)[match(numeric_id, V(g)$name)],
+      betweenness = betweenness(g, normalized = TRUE)[match(numeric_id, V(g)$name)],
+      closeness = closeness(g, normalized = TRUE)[match(numeric_id, V(g)$name)],
+      eigenvector = eigen_centrality(g)$vector[match(numeric_id, V(g)$name)]
+    )
+  
+  return(list(features = sampled_features, edges = sampled_edges))
+}
+
+# Function to find optimal sample size
+find_optimal_sample <- function(features, edges, max_time = 600, start_percentage = 0.01, increment = 0.01) {
+  current_percentage <- start_percentage
+  
+  while(current_percentage <= 1) {
+    cat(sprintf("Trying sample size: %.2f%%\n", current_percentage * 100))
+    
+    start_time <- Sys.time()
+    tryCatch({
+      result <- sample_and_process(features, edges, current_percentage)
+      end_time <- Sys.time()
+      
+      processing_time <- as.numeric(difftime(end_time, start_time, units = "secs"))
+      cat(sprintf("Processing time: %.2f seconds\n", processing_time))
+      
+      if (processing_time > max_time) {
+        cat(sprintf("Time limit exceeded. Optimal sample size: %.2f%%\n", (current_percentage - increment) * 100))
+        return(sample_and_process(features, edges, current_percentage - increment))
+      }
+      
+      if (current_percentage == 1) {
+        cat("Processed 100% of data within time limit.\n")
+        return(result)
+      }
+      
+      current_percentage <- min(current_percentage + increment, 1)
+    }, error = function(e) {
+      cat("Error occurred. Reducing sample size.\n")
+      current_percentage <- current_percentage - increment
+    })
+  }
+}
+
+clean_features <- features %>%
+  group_by(numeric_id) %>%
+  slice_max(order_by = views, n = 1) %>%
+  ungroup() %>%
+  mutate(across(everything(), ~ifelse(is.na(.), median(., na.rm = TRUE), .))) %>%
+  mutate(
+    account_age = as.numeric(difftime(Sys.Date(), created_at, units = "days")),
+    log_views = log1p(views),
+    engagement_ratio = views / life_time,
+    is_affiliated = as.numeric(affiliate == 1),
+    language_group = case_when(
+      language %in% c("EN", "DE", "FR", "ES", "RU") ~ language,
+      TRUE ~ "OTHER"
+    )
+  )
+
+clean_edges <- edges %>%
+  filter(numeric_id_1 %in% clean_features$numeric_id,
+         numeric_id_2 %in% clean_features$numeric_id) %>%
+  filter(numeric_id_1 != numeric_id_2)
+
+# Find optimal sample size
+optimal_sample <- find_optimal_sample(clean_features, clean_edges, max_time = 10)  
+
+sampled_features <- optimal_sample$features
+sampled_edges <- optimal_sample$edges
+
+# Save sampled datasets
+write.csv(sampled_features, "sampled_features.csv", row.names = FALSE)
+write.csv(sampled_edges, "sampled_edges.csv", row.names = FALSE)
+
+print("Sampled datasets have been saved as CSV files.")
+```
+
+
+# Installing Packages
+
+```{r}
+packages <- c("dplyr", "tidyr", "ggplot2", "igraph", "network", "ergm", "caret", "corrplot", "gridExtra", "pROC")
+
+install_if_missing <- function(package) {
+  if (!requireNamespace(package, quietly = TRUE)) {
+    install.packages(package, dependencies = TRUE)
+  }
+}
+
+sapply(packages, install_if_missing)
+
+sapply(packages, library, character.only = TRUE)
+
+print("All necessary packages have been installed and loaded.")
+```
+
+
+# Data Exploration
+
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+sampled_features <- read.csv("sampled_features.csv")
+sampled_edges <- read.csv("sampled_edges.csv")
+
+print("Structure of sampled_features:")
+str(sampled_features)
+
+print("\nColumn names of sampled_features:")
+print(colnames(sampled_features))
+
+missing_values <- sapply(sampled_features, function(x) sum(is.na(x)))
+print("\nMissing values in sampled_features:")
+print(missing_values)
+
+if ("views" %in% colnames(sampled_features)) {
+  print("\nSummary of 'views' column:")
+  print(summary(sampled_features$views))
+  
+  ggplot(sampled_features, aes(x = views)) +
+    geom_histogram(bins = 30, fill = "skyblue", color = "black") +
+    theme_minimal() +
+    scale_x_log10() +  # Use log scale for better visualization
+    ggtitle("Distribution of Views (Log Scale)")
+}
+
+# Feature Engineering
+sampled_features <- sampled_features %>%
+  mutate(
+    log_views = if ("views" %in% colnames(.)) log1p(views) else NULL,
+    log_followers = if ("followers" %in% colnames(.)) log1p(followers) else NULL,
+    followers_to_views_ratio = if (all(c("followers", "views") %in% colnames(.))) followers / views else NULL,
+    avg_views_per_stream = if (all(c("views", "stream_count") %in% colnames(.))) views / stream_count else NULL
+  )
+
+print("\nFirst few rows of the modified sampled_features:")
+print(head(sampled_features))
+
+print("\nStructure of sampled_edges:")
+str(sampled_edges)
+
+print("\nColumn names of sampled_edges:")
+print(colnames(sampled_edges))
+
+print("\nFirst few rows of sampled_edges:")
+print(head(sampled_edges))
+
+print("Data exploration complete. Please review the output to understand the structure of your data.")
+```
+
+#Cleaning and Analysis of Sampled Data
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(igraph)
+library(caret)
+library(corrplot)
+library(pROC)
+
+sampled_features <- read.csv("sampled_features.csv")
+sampled_edges <- read.csv("sampled_edges.csv")
+
+sampled_edges_deduplicated <- sampled_edges %>%
+  distinct(numeric_id_1, numeric_id_2)
+
+g <- graph_from_data_frame(sampled_edges_deduplicated, directed = FALSE, vertices = sampled_features$numeric_id)
+
+# 1. Data Cleaning and Exploration
+
+sampled_features$closeness[is.na(sampled_features$closeness)] <- median(sampled_features$closeness, na.rm = TRUE)
+
+# 2. Feature Engineering
+
+sampled_features <- sampled_features %>%
+  mutate(
+    log_views = log1p(views),
+    views_per_lifetime = views / life_time
+  )
+
+# 3. Network Metrics Visualization
+
+ggplot(sampled_features, aes(x = degree)) +
+  geom_histogram(bins = 30, fill = "skyblue", color = "black") +
+  theme_minimal() +
+  ggtitle("Distribution of Degree Centrality")
+
+ggplot(sampled_features, aes(x = degree, y = log_views)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  theme_minimal() +
+  ggtitle("Degree Centrality vs. Log Views")
+
+# 4. Correlation Analysis
+print("Numeric columns in the dataset:")
+print(names(sampled_features)[sapply(sampled_features, is.numeric)])
+
+numeric_features <- sampled_features %>% 
+  select_if(is.numeric) %>%
+  select(-numeric_id)  # Exclude non-relevant numeric columns
+
+if ("hour" %in% names(numeric_features)) {
+  numeric_features <- numeric_features %>% select(-hour)
+}
+
+print("Columns used for correlation analysis:")
+print(names(numeric_features))
+
+cor_matrix <- cor(numeric_features, use = "complete.obs")
+
+corrplot(cor_matrix, method = "color", type = "upper", order = "hclust", 
+         tl.col = "black", tl.srt = 45, tl.cex = 0.7)
+
+# 5. Prepare Data for Predictive Model
+
+dyadic_data <- as.data.frame(as_edgelist(g))
+names(dyadic_data) <- c("from", "to")
+
+dyadic_data$from <- as.integer(dyadic_data$from)
+dyadic_data$to <- as.integer(dyadic_data$to)
+
+dyadic_data <- dyadic_data %>%
+  left_join(sampled_features, by = c("from" = "numeric_id")) %>%
+  left_join(sampled_features, by = c("to" = "numeric_id"), suffix = c("_from", "_to"))
+
+dyadic_data$edge_exists <- 1
+
+set.seed(42)
+non_edges <- as.data.frame(t(combn(sample(sampled_features$numeric_id, 1000), 2)))
+names(non_edges) <- c("from", "to")
+non_edges <- non_edges %>%
+  anti_join(dyadic_data, by = c("from", "to")) %>%
+  sample_n(min(nrow(dyadic_data), nrow(non_edges)))  # Balance the dataset
+
+non_edges <- non_edges %>%
+  left_join(sampled_features, by = c("from" = "numeric_id")) %>%
+  left_join(sampled_features, by = c("to" = "numeric_id"), suffix = c("_from", "_to"))
+
+non_edges$edge_exists <- 0
+
+full_dyadic_data <- rbind(dyadic_data, non_edges)
+
+# 6. Train a Simple Predictive Model
+
+model_features <- c("views_from", "mature_from", "degree_from", 
+                    "views_to", "mature_to", "degree_to")
+
+set.seed(42)
+train_indices <- createDataPartition(full_dyadic_data$edge_exists, p = 0.8, list = FALSE)
+train_data <- full_dyadic_data[train_indices, ]
+test_data <- full_dyadic_data[-train_indices, ]
+
+log_model <- glm(edge_exists ~ ., data = train_data[, c("edge_exists", model_features)], family = "binomial")
+
+predictions <- predict(log_model, newdata = test_data, type = "response")
+test_data$predicted_prob <- predictions
+
+roc_curve <- roc(test_data$edge_exists, test_data$predicted_prob)
+auc_value <- auc(roc_curve)
+
+print(paste("AUC:", auc_value))
+
+plot(roc_curve, main = "ROC Curve for Edge Prediction Model")
+
+# 7. Feature Importance
+
+feature_importance <- abs(coef(log_model)[-1])  # Exclude intercept
+feature_importance <- sort(feature_importance, decreasing = TRUE)
+
+barplot(feature_importance, 
+        main = "Feature Importance for Edge Prediction",
+        xlab = "Importance", 
+        horiz = TRUE, 
+        las = 1)
+
+# 8. Network Statistics
+
+network_stats <- data.frame(
+  Nodes = vcount(g),
+  Edges = ecount(g),
+  Density = edge_density(g),
+  AvgDegree = mean(degree(g)),
+  Diameter = diameter(g),
+  AvgPathLength = mean_distance(g)
+)
+
+print("Network Statistics:")
+print(network_stats)
+
+write.csv(sampled_features, "cleaned_features.csv", row.names = FALSE)
+write.csv(full_dyadic_data, "dyadic_data.csv", row.names = FALSE)
+
+print("Analysis complete. Cleaned data and dyadic dataset have been saved.")
+```
+
+
+Content Similarity Analysis:
+Assuming we have data on streamer content (e.g., game categories), we could perform a content similarity analysis:
+
+
+#Checking our Work
+```{r}
+# Load necessary libraries
+library(igraph)
+library(dplyr)
+library(ggplot2)
+library(statnet)  # for ERGM
+library(intergraph)
+
+
+cleaned_features <- read.csv("cleaned_features.csv")
+dyadic_data <- read.csv("dyadic_data.csv")
+
+g <- graph_from_data_frame(dyadic_data[,c("from", "to")], directed = FALSE)
+
+for(attr in names(cleaned_features)) {
+  if(attr != "numeric_id") {  # Assuming 'numeric_id' is the vertex identifier
+    vertex_attr(g, attr) <- cleaned_features[[attr]][match(V(g)$name, cleaned_features$numeric_id)]
+  }
+}
+
+# 1. Data Cleaning and Exploration
+
+print("Missing values in cleaned_features:")
+print(colSums(is.na(cleaned_features)))
+print("Missing values in dyadic_data:")
+print(colSums(is.na(dyadic_data)))
+print("Infinite values in cleaned_features:")
+
+
+# 2. Feature Engineering
+
+print("Existing features:")
+print(names(cleaned_features))
+
+cleaned_features <- cleaned_features %>%
+  mutate(
+    log_views = log1p(views),
+    views_per_lifetime = views / life_time,
+    is_mature = as.integer(mature)
+  )
+
+for(attr in c("log_views", "views_per_lifetime", "is_mature")) {
+  vertex_attr(g, attr) <- cleaned_features[[attr]][match(V(g)$name, cleaned_features$numeric_id)]
+}
+
+print("Network Statistics:")
+print(paste("Nodes:", igraph::vcount(g)))
+print(paste("Edges:", igraph::ecount(g)))
+print(paste("Density:", igraph::edge_density(g)))
+print(paste("Transitivity:", igraph::transitivity(g)))
+print(paste("Average Path Length:", igraph::mean_distance(g)))
+
+deg <- igraph::degree(g)
+ggplot(data.frame(degree=deg), aes(x=degree)) +
+  geom_histogram(bins=30, fill="skyblue", color="black") +
+  theme_minimal() +
+  ggtitle("Degree Distribution")
+
+# 4. Prepare for ERGM
+
+net <- intergraph::asNetwork(g)
+
+print("Network attributes:")
+print(list.vertex.attributes(net))
+
+ergm_formula <- net ~ edges + 
+                     nodecov("views") + 
+                     nodecov("life_time") + 
+                     nodefactor("is_mature") +
+                     gwesp(0.25, fixed=TRUE)
+
+ergm_model <- ergm(ergm_formula, control = control.ergm(MCMC.burnin = 10000, MCMC.samplesize = 10000))
+
+summary(ergm_model)
+
+gof_ergm <- gof(ergm_model)
+plot(gof_ergm)
+
+print("Data preparation and initial ERGM modeling complete.")
+```
