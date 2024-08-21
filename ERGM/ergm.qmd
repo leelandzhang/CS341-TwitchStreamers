@@ -71,8 +71,8 @@ The analysis will be using 2 types of files: "filtered_twitch_edges.csv" as the 
 # “Mutual follower relationship of Twitch Users.” 
 
 # Load the edge list and features
-mutualEdgelist <- read.csv("mapped_twitch_edges.csv")
-features <- read.csv("mapped_twitch_features.csv")
+mutualEdgelist <- read.csv("mapped_twitch_edges2.csv")
+features <- read.csv("mapped_twitch_features2.csv")
 
 # Get all unique node IDs from features file
 all_nodes <- features$numeric_id
@@ -138,6 +138,7 @@ library('igraph') # Ignore messages on any objects that are masked
 # ----------------------------------------------------------------------------
 detach(package:igraph) # Remove the 'igraph' package from your environment. 
 library(statnet)
+library(Rglpk)
 options(ergm.loglik.warn_dyads=FALSE) # Whether or not a warning should be issued when sample space constraints render the observed number of dyads ill-defined
 help("ergm-terms",package = "ergm")
 ```
@@ -153,6 +154,8 @@ model1 <- ergm(mutual ~ edges # Captures the tendency of nodes with many edges f
                + nodematch("language") # Homophily effect on the categorical variable "language"
                + nodecov("descaled_views")  # Effect of the number of descaled views on the likelihood of forming an edge         
                + nodecov("life_time") # Effect of the lifetime of an account on the likelihood of forming an edge 
+               + gwesp(log(2), fixed = T)  # Adding transitivity
+              
                , control = control.ergm(seed = 42)
                , verbose = F
 )
