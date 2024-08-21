@@ -124,23 +124,68 @@ network::get.vertex.attribute(mutual,"affiliate")
 # ----------------------------------------------------------------------------
 library('igraph') # Ignore messages on any objects that are masked
 
-# TO-DO: Will continue on this if time permits
+# Set default plot options
+igraph_options(vertex.size = 9, vertex.color = 'grey', # vertex.size changes the size of nodes; vertex.color changes the color of nodes
+               edge.color='gray80', edge.arrow.size=.1, # edge.color changes the color of ties; edge.arrow.size changes the size of tie arrow heads
+               vertex.label = NA)                       # vertex.label = NA specifies not to display vertex labels in the plot
+
+# Plot the Advice network
+mutual_igraph <- graph.adjacency(as.matrix.network(mutual)) # make an igraph network object from statnet network object
+mutual_igraph <- set_vertex_attr(mutual_igraph,"language",value = features$language)
+net_layout <- layout_with_fr(mutual_igraph) # Calculates and stores a spring-embedded layout
+                                           # We will re-use this same layout for each plot, so nodes are always in the same place
+plot(mutual_igraph, layout=net_layout, edge.color='black', vertex.label = V(mutual_igraph))
 
 ```
+
+```{r}
+# Plot the Mutual Follower Relationship Network network with node coloring based on content creator's main language
+
+# Get the unique languages
+unique_languages <- unique(features$language)
+
+# Generate a color palette with the same length as the number of unique languages
+palette <- rainbow(length(unique_languages))  # You can use other palettes like heat.colors, terrain.colors, etc.
+
+# Create a named vector to map each language to a color
+language_colors <- setNames(palette, unique_languages)
+
+# Map the colors to each node based on their language
+V(mutual_igraph)$color <- language_colors[features$language]
+
+# Plot the network with nodes colored by language
+plot(mutual_igraph, layout=net_layout, edge.color='black', vertex.label = NA)
+
+# Add a legend to the plot
+legend("topright", legend = unique_languages, col = palette, pch = 19, title = "Language")
+
+```
+
+
 
 # Part II: Model Estimation 
 
 ```{r}
 # ----------------------------------------------------------------------------
-######################## PART II: Build the ERGM models ########################
+######################## PART II: Build the ERGM model ########################
 #
 # R vignette for more details: https://cran.r-project.org/web/packages/ergm/ergm.pdf
 # ----------------------------------------------------------------------------
 detach(package:igraph) # Remove the 'igraph' package from your environment. 
 library(statnet)
-library(Rglpk)
+library(Rglpk) # This library optimizes transivity computation
 options(ergm.loglik.warn_dyads=FALSE) # Whether or not a warning should be issued when sample space constraints render the observed number of dyads ill-defined
 help("ergm-terms",package = "ergm")
+
+summary(mutual ~ edges)
+summary(mutual ~ nodematch("mature"))
+summary(mutual ~ nodematch("affiliate"))
+summary(mutual ~ nodematch("language"))
+summary(mutual ~ kstar(2))
+summary(mutual ~ nodecov("descaled_views"))
+summary(mutual ~ nodecov("life_time"))
+summary(mutual ~ gwesp(log(2), fixed = T))
+
 ```
 
 ```{r}
@@ -148,17 +193,17 @@ help("ergm-terms",package = "ergm")
 
 # The following commands do model estimation for ERGMs.
 # This may take a second. Text will print in-console to update you on progress in model estimation.
-model1 <- ergm(mutual ~ edges # Captures the tendency of nodes with many edges forming more mutual connections
+model <- ergm(mutual ~ edges # Captures the tendency of nodes with many edges forming more mutual connections
                + nodematch("mature") # Homophily effect on the categorical variable "mature"
                + nodematch("affiliate") # Homophily effect on the categorical variable "affiliate"
                + nodematch("language") # Homophily effect on the categorical variable "language"
+               + kstar(2) # Adding a 2-star term
                + nodecov("descaled_views")  # Effect of the number of descaled views on the likelihood of forming an edge         
-               + nodecov("life_time") # Effect of the lifetime of an account on the likelihood of forming an edge 
+               + nodecov("life_time") # Effect of the lifetime of an account on the likelihood of forming an edge                
                + gwesp(log(2), fixed = T)  # Adding transitivity
-              
                , control = control.ergm(seed = 42)
                , verbose = F
 )
-summary(model1) 
+summary(model) 
 
 ```
