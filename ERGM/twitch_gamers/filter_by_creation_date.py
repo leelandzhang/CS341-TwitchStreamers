@@ -15,9 +15,6 @@ features_df["created_at"] = pd.to_datetime(features_df["created_at"])
 # Filter the DataFrame for rows where 'created_at' is after 2016-01-01
 filtered_features_df = features_df[features_df["created_at"] >= "2018-01-01"]
 
-# Write the filtered features DataFrame to a new CSV file
-filtered_features_df.to_csv(OUTPUT_FEATURES_FILE, index=False)
-
 # Extract the numeric_id values from the filtered features DataFrame
 filtered_numeric_ids = set(filtered_features_df["numeric_id"])
 
@@ -30,6 +27,18 @@ filtered_edges_df = edges_df[
     (edges_df["numeric_id_1"].isin(filtered_numeric_ids))
     & (edges_df["numeric_id_2"].isin(filtered_numeric_ids))
 ]
+
+filtered_numeric_ids_by_edge = set(filtered_edges_df["numeric_id_1"]) | set(
+    filtered_edges_df["numeric_id_2"]
+)
+
+# After filtering the edges, filter out the nodes that do not have any edges
+filtered_features_df = filtered_features_df[
+    (filtered_features_df["numeric_id"].isin(filtered_numeric_ids_by_edge))
+]
+
+# Write the filtered features DataFrame to a new CSV file
+filtered_features_df.to_csv(OUTPUT_FEATURES_FILE, index=False)
 
 # Write the filtered edges DataFrame to a new CSV file
 filtered_edges_df.to_csv(OUTPUT_EDGES_FILE, index=False)
