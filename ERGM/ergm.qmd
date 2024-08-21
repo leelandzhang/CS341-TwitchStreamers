@@ -88,8 +88,8 @@ mutual
 
 # Independent variables:
 # Load node attributes, and store them in the mutual network object we have created
-mutual |> network::set.vertex.attribute("views", 
-                          value = features$views) # Attribute indicating how many views has the streamer received
+mutual |> network::set.vertex.attribute("descaled_views", 
+                          value = features$views / 10000) # Attribute indicating how many views has the streamer received
 
 mutual |> network::set.vertex.attribute("mature",features$mature) # Attribute indicating whether the streamer creates "mature" content
 mutual |> network::set.vertex.attribute("life_time",features$life_time) # The time between the streamer creating the account and the last time they have uploaded content. As of 2018. 
@@ -106,13 +106,14 @@ mutual # These five variables should now be listed as vertex attributes when vie
 
 ```{r}
 # Double-check the values for all of the node variables
-network::get.vertex.attribute(mutual,"views")
+network::get.vertex.attribute(mutual,"descaled_views")
 network::get.vertex.attribute(mutual,"mature")
 network::get.vertex.attribute(mutual,"life_time")
 network::get.vertex.attribute(mutual,"dead_account")
+network::get.vertex.attribute(mutual,"language")
 network::get.vertex.attribute(mutual,"affiliate")
-```
 
+```
 
 
 ## 1. Plotting the mutual followers network.
@@ -123,50 +124,38 @@ network::get.vertex.attribute(mutual,"affiliate")
 # ----------------------------------------------------------------------------
 library('igraph') # Ignore messages on any objects that are masked
 
-# Set default plot options
-igraph_options(vertex.size = 9, vertex.color = 'grey', # vertex.size changes the size of nodes; vertex.color changes the color of nodes
-               edge.color='gray80', edge.arrow.size=.1, # edge.color changes the color of ties; edge.arrow.size changes the size of tie arrow heads
-               vertex.label = NA)                       # vertex.label = NA specifies not to display vertex labels in the plot
-
-# Plot the Advice network
-mutual_igraph <- graph.adjacency(as.matrix.network(mutual)) # make an igraph network object from statnet network object
-mutual_igraph <- set_vertex_attr(mutual_igraph,"mature",value = features$mature)
-#net_layout <- layout_with_fr(mutual_igraph) # Calculates and stores a spring-embedded layout
-                                           # We will re-use this same layout for each plot, so nodes are always in the same place
-#plot(mutual_igraph, layout=net_layout, edge.color='black', vertex.label = V(mutual_igraph))
-
-# Find a well-connected node (e.g., highest degree)
-central_node <- which.max(degree(mutual_igraph))
-
-# Extract a connected subgraph around this node, with a maximum of 50 vertices
-subgraph_vertices <- numeric(0)  # Initialize an empty vector to store vertices
-radius <- 1  # Start with radius = 1 (direct neighbors)
-
-while (length(subgraph_vertices) < 50) {
-  subgraph_vertices <- ego(mutual_igraph, order = radius, nodes = central_node, mode = "all")[[1]]
-  radius <- radius + 1
-  if (length(subgraph_vertices) > 50) {
-    subgraph_vertices <- subgraph_vertices[1:50]  # Limit to 50 vertices
-    break
-  }
-}
-
-# Induce the subgraph
-subgraph_connected <- induced_subgraph(mutual_igraph, vids = subgraph_vertices)
-
-# Set default plot options for the connected subgraph
-igraph_options(vertex.size = 9, vertex.color = 'grey',
-               edge.color = 'gray80', edge.arrow.size = .1,
-               vertex.label = NA)
-
-# Create a layout for the connected subgraph
-subgraph_layout <- layout_with_fr(subgraph_connected)
-
-# Plot the connected subgraph
-plot(subgraph_connected, layout = subgraph_layout, edge.color = 'black')
-
+# TO-DO: Will continue on this if time permits
 
 ```
 
+# Part II: Model Estimation 
 
+```{r}
+# ----------------------------------------------------------------------------
+######################## PART II: Build the ERGM models ########################
+#
+# R vignette for more details: https://cran.r-project.org/web/packages/ergm/ergm.pdf
+# ----------------------------------------------------------------------------
+detach(package:igraph) # Remove the 'igraph' package from your environment. 
+library(statnet)
+options(ergm.loglik.warn_dyads=FALSE) # Whether or not a warning should be issued when sample space constraints render the observed number of dyads ill-defined
+help("ergm-terms",package = "ergm")
+```
 
+```{r}
+#| message: false
+
+# The following commands do model estimation for ERGMs.
+# This may take a second. Text will print in-console to update you on progress in model estimation.
+model1 <- ergm(mutual ~ edges # Captures the tendency of nodes with many edges forming more mutual connections
+               + nodematch("mature") # Homophily effect on the categorical variable "mature"
+               + nodematch("affiliate") # Homophily effect on the categorical variable "affiliate"
+               + nodematch("language") # Homophily effect on the categorical variable "language"
+               + nodecov("descaled_views")  # Effect of the number of descaled views on the likelihood of forming an edge         
+               + nodecov("life_time") # Effect of the lifetime of an account on the likelihood of forming an edge 
+               , control = control.ergm(seed = 42)
+               , verbose = F
+)
+summary(model1) 
+
+```
