@@ -1,8 +1,14 @@
 import pandas as pd
 
+# Define input and output file paths
+INPUT_FEATURES_FILE = "filtered_twitch_features2.csv"
+INPUT_EDGES_FILE = "filtered_twitch_edges2.csv"
+OUTPUT_FEATURES_FILE = "mapped_twitch_features2.csv"
+OUTPUT_EDGES_FILE = "mapped_twitch_edges2.csv"
+
 # Load the features and edges files
-features = pd.read_csv("filtered_twitch_features.csv")
-edges = pd.read_csv("filtered_twitch_edges.csv")
+features = pd.read_csv(INPUT_FEATURES_FILE)
+edges = pd.read_csv(INPUT_EDGES_FILE)
 
 # Verify if the features file is sorted by numeric_id
 is_sorted = features["numeric_id"].is_monotonic_increasing
@@ -22,8 +28,8 @@ if is_sorted:
     edges["numeric_id_2"] = edges["numeric_id_2"].map(id_mapping)
 
     # Save the updated features and edges files
-    features.to_csv("mapped_twitch_features.csv", index=False)
-    edges.to_csv("mapped_twitch_edges.csv", index=False)
+    features.to_csv(OUTPUT_FEATURES_FILE, index=False)
+    edges.to_csv(OUTPUT_EDGES_FILE, index=False)
 
     # Optionally, save the mapping to a file for reference
     pd.DataFrame(list(id_mapping.items()), columns=["original_id", "new_id"]).to_csv(

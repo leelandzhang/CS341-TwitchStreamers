@@ -3,8 +3,8 @@ import pandas as pd
 # Define input and output file paths
 INPUT_FEATURES_FILE = "large_twitch_features.csv"
 INPUT_EDGES_FILE = "large_twitch_edges.csv"
-OUTPUT_FEATURES_FILE = "filtered_twitch_features.csv"
-OUTPUT_EDGES_FILE = "filtered_twitch_edges.csv"
+OUTPUT_FEATURES_FILE = "filtered_twitch_features2.csv"
+OUTPUT_EDGES_FILE = "filtered_twitch_edges2.csv"
 
 # Read the features CSV file into a DataFrame
 features_df = pd.read_csv(INPUT_FEATURES_FILE)
@@ -13,7 +13,7 @@ features_df = pd.read_csv(INPUT_FEATURES_FILE)
 features_df["created_at"] = pd.to_datetime(features_df["created_at"])
 
 # Filter the DataFrame for rows where 'created_at' is after 2016-01-01
-filtered_features_df = features_df[features_df["created_at"] >= "2018-01-01"]
+filtered_features_df = features_df[features_df["created_at"] >= "2018-04-01"]
 
 # Extract the numeric_id values from the filtered features DataFrame
 filtered_numeric_ids = set(filtered_features_df["numeric_id"])
