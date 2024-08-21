@@ -36,8 +36,6 @@ format:
           \fancyfoot[C]{\thepage}
 ---
 
-
-
 ```{r}
 #| echo: false
 #| output: false
@@ -54,11 +52,19 @@ if (!"statnet" %in% installed.packages()) install.packages("statnet") # For fitt
 if (!"igraph" %in% installed.packages()) install.packages("igraph") # For network plotting
 if (!"texreg" %in% installed.packages()) install.packages("texreg") # For printing "nicer" model output
 
+library(statnet)
+
+# -------------------------------------------------------------------------------------------------
+# Set the working directory
+# Session > Set Working Directory > To Source File Location
+# -------------------------------------------------------------------------------------------------
+list.files() # List the files in the current working directory to see if you're in the right directory
+
 ```
 
 # Part I: Building and Visualizing the Networks
 
-The analysis will be using 2 types of files: "filtered_twitch_edges.csv" as the *base_network* and "filtered_twitch_features.csv" will make up the *node_attributes*. 
+The analysis will be using 2 types of files: "filtered_twitch_edges.csv" as the *base_network* and "filtered_twitch_features.csv" will make up the *node_attributes*.
 
 ```{r}
 #| echo: false
@@ -89,7 +95,7 @@ mutual
 # Independent variables:
 # Load node attributes, and store them in the mutual network object we have created
 mutual |> network::set.vertex.attribute("descaled_views", 
-                          value = features$views / 10000) # Attribute indicating how many views has the streamer received
+                          value = features$views / 10000) # Attribute indicating how many views has the streamer received. Scaled by 0.0001 
 
 mutual |> network::set.vertex.attribute("mature",features$mature) # Attribute indicating whether the streamer creates "mature" content
 mutual |> network::set.vertex.attribute("life_time",features$life_time) # The time between the streamer creating the account and the last time they have uploaded content. As of 2018. 
@@ -103,7 +109,6 @@ mutual |> network::set.vertex.attribute("affiliate",features$affiliate) # Indica
 mutual # These five variables should now be listed as vertex attributes when viewing the summary of the network
 ```
 
-
 ```{r}
 # Double-check the values for all of the node variables
 network::get.vertex.attribute(mutual,"descaled_views")
@@ -115,6 +120,23 @@ network::get.vertex.attribute(mutual,"affiliate")
 
 ```
 
+## **Hypotheses:**
+
+We are going to test the following hypotheses in this project.
+
+***Hypothesis 1***: Users who share the same primary language are more likely to form mutual follower connections than users with different primary languages.
+
+***Hypothesis 2***: Users who are both affiliates are more likely to form mutual follower connections than users with different affiliate statuses.
+
+***Hypothesis 3***: Users who have marked their accounts as mature are more likely to form mutual follower relationships with other users who have also marked their accounts as mature.
+
+***Hypothesis 4**:* Users with a higher number of views are more likely to form mutual follower connections than users with fewer views.
+
+***Hypothesis 5**:* Users with older accounts (higher life_time values) are more likely to form mutual follower connections.
+
+***Hypothesis 6**:* If user A and user B have a mutual follower relationship, and user B and user C also have a mutual follower relationship, then user A and user C are more likely to form a mutual follower relationship (i.e., the network exhibits a high degree of transitivity).
+
+***Hypothesis 7***: Users are likely to form connections that create "2-star" configurations, where one user is connected to two others who are not connected to each other.
 
 ## 1. Plotting the mutual followers network.
 
@@ -129,7 +151,7 @@ igraph_options(vertex.size = 9, vertex.color = 'grey', # vertex.size changes the
                edge.color='gray80', edge.arrow.size=.1, # edge.color changes the color of ties; edge.arrow.size changes the size of tie arrow heads
                vertex.label = NA)                       # vertex.label = NA specifies not to display vertex labels in the plot
 
-# Plot the Advice network
+# Plot the Mutual Follower network
 mutual_igraph <- graph.adjacency(as.matrix.network(mutual)) # make an igraph network object from statnet network object
 mutual_igraph <- set_vertex_attr(mutual_igraph,"language",value = features$language)
 net_layout <- layout_with_fr(mutual_igraph) # Calculates and stores a spring-embedded layout
@@ -139,7 +161,7 @@ plot(mutual_igraph, layout=net_layout, edge.color='black', vertex.label = V(mutu
 ```
 
 ```{r}
-# Plot the Mutual Follower Relationship Network network with node coloring based on content creator's main language
+# Plot the Mutual Follower Relationship Network network with node coloring based on content creator's primary language
 
 # Get the unique languages
 unique_languages <- unique(features$language)
@@ -161,9 +183,7 @@ legend("topright", legend = unique_languages, col = palette, pch = 19, title = "
 
 ```
 
-
-
-# Part II: Model Estimation 
+# Part II: Model Estimation
 
 ```{r}
 # ----------------------------------------------------------------------------
@@ -207,3 +227,103 @@ model <- ergm(mutual ~ edges # Captures the tendency of nodes with many edges fo
 summary(model) 
 
 ```
+
+## Interperating the Hypothesis
+
+### Hypothesis 1: Homophily on Language
+
+The p-value for nodematch.language is:
+
+0.002406
+
+This is less than 0.05, meaning we reject the null hypothesis. There is likely a correlation between sharing the same language and forming a mutual follower relationship.
+
+Now we look at the log-odds ratio:
+
+1.957582
+
+When exponentiated, we get:
+
+7.085553504126308
+
+This means that the formation of mutual follower relationships between users who share the same language is about 7 times more likely than between users who do not share the same primary language. Therefore, this hypothesis is accepted.
+
+### Hypothesis 2: Homophily on Affiliate Status
+
+The p-value for nodematch.affiliate is:
+
+0.033661
+
+This is less than 0.05, so we reject the null hypothesis. There is likely a correlation between sharing the same affiliate status and forming a mutual follower relationship.
+
+Now we look at the log-odds ratio:
+
+0.566721
+
+When exponentiated, we get:
+
+1.7622939521970955
+
+This indicates that the formation of mutual follower relationships between users who share the same affiliate status is about 1.76 times more likely than between users who do not share the same affiliate status. Therefore, this hypothesis is accepted.
+
+### Hypothesis 3: Homophily on Maturity
+
+The p-value for nodematch.mature is:
+
+0.753290
+
+This is greater than 0.05, so we cannot reject the null hypothesis. The data does not provide sufficient evidence to support a correlation between sharing the same maturity status and forming a mutual follower relationship.
+
+### Hypothesis 4: Influence of View Count on Connectivity
+
+The p-value for nodecov.descaled_views is:
+
+0.271689
+
+This is greater than 0.05, meaning we cannot reject the null hypothesis. The data does not provide sufficient evidence to support the hypothesis that having a higher number of views increases the likelihood of forming a mutual follower relationship.
+
+### Hypothesis 5: Effect of Account Age on Connectivity
+
+The p-value for nodecov.life_time is:
+
+0.300042
+
+This is greater than 0.05, meaning we cannot reject the null hypothesis. The data does not provide sufficient evidence to support the hypothesis that users with older accounts are more likely to form mutual follower relationships.
+
+### Hypothesis 6: Transitivity in the Network
+
+The p-value for gwesp.fixed.0.693147180559945 is:
+
+\< 1e-04
+
+This is less than 0.05, indicating we reject the null hypothesis and conclude that transitive relationships are likely correlated with the formation of mutual follower relationships.
+
+Now we look at the log-odds ratio:
+
+1.010757
+
+When exponentiated, we get:
+
+2.7474177409933193
+
+This suggests that if user A and user B have a mutual follower relationship, and user B and user C also have a mutual follower relationship, then user A and user C are about 2.75 times more likely to also have a mutual follower relationship compared to pairs of users who do not have such transitive relationships. Therefore, this hypothesis is accepted.
+
+### Hypothesis 7: Role of 2-Star Configurations
+
+The p-value for kstar2 is:
+
+0.000968
+
+This is less than 0.05, so we reject the null hypothesis. There is a significant correlation between the presence of 2-star configurations and the formation of mutual follower relationships.
+
+Now we look at the log-odds ratio:
+
+-0.439450
+
+When exponentiated, we get:
+
+0.6441856253239544
+
+This indicates that the presence of 2-star configurations decreases the likelihood of forming mutual follower relationships. Specifically, users connected through 2-star configurations are about 0.64 times as likely to form mutual follower relationships compared to users who are not part of such configurations.
+
+**Interpretation:** The data does not support the hypothesis that 2-star configurations increase the likelihood of mutual follower relationships. Instead, it suggests the opposite: mutual follower relationships are less likely to occur in the context of 2-star configurations. This could indicate that users are more inclined to form fully interconnected relationships (triads) rather than being part of partially connected structures like 2-stars. Therefore, the original hypothesis is rejected.
