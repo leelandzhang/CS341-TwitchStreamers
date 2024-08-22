@@ -76,6 +76,8 @@ The analysis will be using 2 types of files: "filtered_twitch_edges.csv" as the 
 # Dependent variable:
 # “Mutual follower relationship of Twitch Users.” 
 
+# library(network)
+
 # Load the edge list and features
 mutualEdgelist <- read.csv("mapped_twitch_edges2.csv")
 features <- read.csv("mapped_twitch_features2.csv")
@@ -87,7 +89,7 @@ all_nodes <- features$numeric_id
 mutual <- network.initialize(length(all_nodes), directed = FALSE)
 
 # Add edges
-add.edges(mutual, mutualEdgelist$numeric_id_1, mutualEdgelist$numeric_id_2)
+network::add.edges(mutual, mutualEdgelist$numeric_id_1, mutualEdgelist$numeric_id_2)
 
 # View the summary of the network object
 mutual
@@ -106,7 +108,7 @@ mutual |> network::set.vertex.attribute("language",features$language) # Categori
 
 mutual |> network::set.vertex.attribute("affiliate",features$affiliate) # Indicating any affliation of user
 
-mutual # These five variables should now be listed as vertex attributes when viewing the summary of the network
+mutual # These six variables should now be listed as vertex attributes when viewing the summary of the network
 ```
 
 ```{r}
@@ -138,6 +140,8 @@ We are going to test the following hypotheses in this project.
 
 ***Hypothesis 7***: Users are likely to form connections that create "2-star" configurations, where one user is connected to two others who are not connected to each other.
 
+***Hypothesis 8***: Users are likely to form connections that create "2-star" configurations, where one user is connected to two others who are not connected to each other.
+
 ## 1. Plotting the mutual followers network.
 
 ```{r}
@@ -147,16 +151,22 @@ We are going to test the following hypotheses in this project.
 library('igraph') # Ignore messages on any objects that are masked
 
 # Set default plot options
-igraph_options(vertex.size = 9, vertex.color = 'grey', # vertex.size changes the size of nodes; vertex.color changes the color of nodes
-               edge.color='gray80', edge.arrow.size=.1, # edge.color changes the color of ties; edge.arrow.size changes the size of tie arrow heads
-               vertex.label = NA)                       # vertex.label = NA specifies not to display vertex labels in the plot
+igraph_options(vertex.size = 5, # Smaller node size
+               vertex.color = 'grey', # Node color
+               edge.color = 'gray80', # Edge color
+               edge.arrow.size = .1,  # Arrow size (if directed)
+               vertex.label = NA)     # No vertex labels
 
 # Plot the Mutual Follower network
-mutual_igraph <- graph.adjacency(as.matrix.network(mutual)) # make an igraph network object from statnet network object
-mutual_igraph <- set_vertex_attr(mutual_igraph,"language",value = features$language)
-net_layout <- layout_with_fr(mutual_igraph) # Calculates and stores a spring-embedded layout
-                                           # We will re-use this same layout for each plot, so nodes are always in the same place
-plot(mutual_igraph, layout=net_layout, edge.color='black', vertex.label = V(mutual_igraph))
+mutual_igraph <- graph.adjacency(as.matrix.network(mutual)) # Convert to igraph object
+mutual_igraph <- set_vertex_attr(mutual_igraph, "language", value = features$language)
+
+# Calculate the layout
+net_layout <- layout_with_fr(mutual_igraph) # Spring-embedded layout
+
+# Plot with specified parameters
+plot(mutual_igraph, layout = net_layout, edge.color = 'black', vertex.size = 3, vertex.label = NA)
+
 
 ```
 
@@ -180,6 +190,20 @@ plot(mutual_igraph, layout=net_layout, edge.color='black', vertex.label = NA)
 
 # Add a legend to the plot
 legend("topright", legend = unique_languages, col = palette, pch = 19, title = "Language")
+
+```
+
+
+```{r}
+# ----------------------------------------------------------------------------
+# Visualize networks with node size based on descaled_views
+# ----------------------------------------------------------------------------
+
+# Adjust node size based on descaled_views
+node_sizes <- features$views / max(features$views) * 10 # Scale node sizes
+
+# Plot with node sizes based on descaled_views
+plot(mutual_igraph, layout = net_layout, edge.color = 'black', vertex.size = node_sizes, vertex.label = NA)
 
 ```
 
@@ -327,3 +351,9 @@ When exponentiated, we get:
 This indicates that the presence of 2-star configurations decreases the likelihood of forming mutual follower relationships. Specifically, users connected through 2-star configurations are about 0.64 times as likely to form mutual follower relationships compared to users who are not part of such configurations.
 
 **Interpretation:** The data does not support the hypothesis that 2-star configurations increase the likelihood of mutual follower relationships. Instead, it suggests the opposite: mutual follower relationships are less likely to occur in the context of 2-star configurations. This could indicate that users are more inclined to form fully interconnected relationships (triads) rather than being part of partially connected structures like 2-stars. Therefore, the original hypothesis is rejected.
+
+
+```{r}
+save.image(file = "ergm.RData")
+```
+
