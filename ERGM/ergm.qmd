@@ -140,8 +140,6 @@ We are going to test the following hypotheses in this project.
 
 ***Hypothesis 7***: Users are likely to form connections that create "2-star" configurations, where one user is connected to two others who are not connected to each other.
 
-***Hypothesis 8***: Users are likely to form connections that create "2-star" configurations, where one user is connected to two others who are not connected to each other.
-
 ## 1. Plotting the mutual followers network.
 
 ```{r}
